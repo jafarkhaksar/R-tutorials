@@ -1,0 +1,272 @@
+---
+title: "R-se02-p2"
+author: "Jafar Khaksar"
+date: '2023-02-28'
+output: html_document
+---
+In this tutorial we learn relating one data set to another. We compare different `join` functions with each other. We remark how duplicated rows as well as NAs in a data frame can cause confusion when we want to join it to another data frame. The material is based on a [chapter](https://r4ds.had.co.nz/relational-data.html) of R4ds with the same title.  
+
+### Understanding joins
+
+Including required libraries
+
+```{r}
+library(dplyr)
+library(nycflights13)
+library(knitr)
+```
+
+importing flights data set
+
+```{r}
+data(flights)
+flights
+```
+
+Importing planes data set
+
+```{r}
+data(planes)
+planes
+```
+
+## Join by a Single Column (Variable)
+
+Let's add more info about planes to the flights data set
+
+```{r}
+left_join(x=flights, y=planes, by="tailnum") # key 
+```
+
+Note suffices generated in the mutual columns.
+
+We don't want the whole variables. we are interested in just manufacturer and model  
+
+```{r}
+flights_plane <- left_join(x=flights,
+                           y=select(planes, tailnum, manufacturer, model),
+                           by="tailnum")
+flights_plane
+```
+
+Re-ordering the columns for a better display 
+
+
+```{r}
+flights_plane <- select(flights_plane, year, month, day, tailnum, manufacturer, model, everything()) 
+flights_plane
+```
+
+We are also interested in the full name of the origin's (departure's) airport.
+
+Importing airports data set
+
+```{r}
+data(airports)
+airports
+```
+
+Again we use `left_join()`. We just take "faa", "name" and "tzone" variables from airports data set.
+
+```{r}
+flights_plane_airport <- left_join(x=flights_plane,
+                             y=select(airports, faa, name, tzone),
+                             by=c("dest"="faa"))
+
+print(flights_plane_airport)
+```
+
+Re-ordering and renaming some columns:
+
+```{r}
+flights_plane_airport <- select(flights_plane_airport, year:dest, name, tzone, everything())
+
+flights_plane_airport <- rename(flights_plane_airport, dest_airport=name, dest_tzone = tzone)
+print(flights_plane_airport)
+```
+
+The previous chunks using pipe operator
+
+```{r}
+flights_plane_airport <- flights_plane %>% 
+                        left_join(y=select(airports, faa, name, tzone),
+                        by=c("dest"="faa")) %>%
+                        select(year:dest, name, tzone, everything())  %>% 
+                        rename(dest_name = name, dest_tzone = tzone)
+
+
+print(flights_plane_airport)
+```
+
+## Multiple Join
+
+Imagine we want to examine the relations between flights' delays and weather conditions in the origin airports.  
+
+Importing weather data set
+
+```{r}
+data(weather)
+print(weather)
+nrow(weather)
+```
+
+
+```{r}
+unique(weather$origin)
+```
+
+We use "by=c(<columns of interest>)" in "left_join()" argument
+
+
+```{r}
+flights_plane_airport_weather <- left_join(x = flights_plane_airport,
+                             y = weather,
+                             by = c("year", "month", "day", "hour", "origin"))
+
+print(flights_plane_airport_weather)
+```
+
+
+Observe that there are many NAs in flights_weather data in columns from weather data set.
+
+```{r}
+is.na(flights_plane_airport_weather$temp)
+```
+
+How many NAs?
+
+```{r}
+sum(is.na(flights_plane_airport_weather$temp))
+```
+
+But we have just a single NA in the original data set, weather.
+
+```{r}
+sum(is.na(weather$temp))
+```
+
+What's going on here?!
+
+```{r left join schematic picture, echo=FALSE}
+pic_lj <- "https://imgtr.ee/images/2023/03/01/Ruwmr.md.png"
+include_graphics(pic_lj)
+```
+Therefore, as the above diagram shows, NAs are generated because there is some rows in the left data set (like the row with key 3 in the picture) that have no counterpart in the right data set based on the key `c("year", "month", "day", "hour", "origin")`. But pay attention that this is *not* the only way NAs can appear: Imagine, in the first row of the right data set, there were `NA` rather than `y1`, then we would have `NA` rather than `y1` in the resulting data set as well.
+
+
+Anyway we can exclude NAs that are generated due to lack of counterpart in the left data set by using `inner_join()`. 
+
+## inner_join()
+
+```{r inner join schematic picture}
+pic_inner <- "https://d33wubrfki0l68.cloudfront.net/3abea0b730526c3f053a3838953c35a0ccbe8980/7f29b/diagrams/join-inner.png"
+include_graphics(pic_inner)
+```
+
+
+```{r}
+flights_plane_airport_weather2 <- inner_join(x = flights_plane_airport,
+                             y = weather,
+                             by = c("year", "month", "day", "hour", "origin"))
+
+flights_plane_airport_weather2
+nrow(flights_plane_airport_weather2)
+```
+
+let's compare the number of NAs
+
+```{r}
+sum(is.na(flights_plane_airport_weather2$temp))
+```
+
+Why 17? We expect that just *1* `NA` remains because we have used `inner_join()` and there is just *1* NA in temp column of weather data set (the right data set). let's investigate the case:
+
+First, we should determine which row contains that single NA
+
+```{r}
+which(is.na(weather$temp))
+```
+
+which is,
+
+```{r}
+weather[which(is.na(weather$temp)),]
+```
+
+Let's see how many counterparts we have in the `flights_plane_airport` data set (the left data set), that is, how many rows we have like the above row in the `flights_airport` based on the key variables, variables by which we have done `inner_join()`, year, month, day, origin:
+
+```{r}
+filter(flights_plane_airport, origin=="EWR", year==2013, month==8, day==22, hour==9)
+```
+
+Exactly 17 rows! It means we have 17 counterparts based on the key for the row that contains `NA` for the `temp` variable, thus NA is *duplicated* 17 times in the `temp` column of the `flights_plane_airport_weather2` data set.     
+
+
+The following picture help us understand the case. Just note that we have `NA` rather than `y2` in our case.
+
+```{r, echo=FALSE}
+pic6 <- "https://d33wubrfki0l68.cloudfront.net/6faac3e996263827cb57fc5803df6192541a9a4b/c7d74/diagrams/join-one-to-many.png"
+include_graphics(pic6)
+```
+
+
+When we have more than 1 observation with a particular key value, we say that the key is not a *primary key*.
+
+For example c("year", "month", "day", "hour", "origin") is not a primary key for `flights_plane_airport` data set. In other words, we call a key a primary key only if we can *uniquely* identify each row by assigning a value to each element of the key.
+
+As we just saw, (origin=="EWR", year==2013, month==8, day==22, hour==9) corresponds to 17 rows of `flights_plane_airport` data set therefore it cannot be a primary key of it.
+
+checking out if a set of variables can be a primary key for a data set
+
+```{r}
+flights_plane_airport %>% 
+  group_by(origin, year, month, day, hour) %>% 
+  summarise(tedad = n())
+```
+```{r}
+flights_plane_airport %>% 
+  count(origin, year, month, day, hour) %>% 
+  filter(n>1)
+  
+
+```
+
+Note that if the variables by which we are implementing `left_join` are not a primary key of the data frames, the following may happen:
+
+```{r, echo=FALSE}
+pic7 <- "https://d33wubrfki0l68.cloudfront.net/d37530bbf7749f48c02684013ae72b2996b07e25/37510/diagrams/join-many-to-many.png"
+include_graphics(pic7)
+```
+
+## full join
+
+`full_join()` keep the whole rows in both data set even though there is no counterpart in the left data set for some of the rows in the right data set and vise versa. 
+
+```{r full join schematic picture}
+pic_fj <- "https://imgtr.ee/images/2023/03/01/RupDY.md.png"
+include_graphics(pic_fj)
+```
+
+```{r}
+flights_plane_airport_weather3 <- full_join(x = flights_plane_airport,
+                                            y = weather,
+                                            by = c("year", "month", "day", "hour", "origin"))
+
+flights_plane_airport_weather2
+nrow(flights_plane_airport_weather2)
+
+```
+
+Notice that we have more rows than `flights_plane_airport` data set, which implies that we have weather condition data in hours when no airplane took off; Perhaps due to inappropriate weather condition.
+
+Finally, it is recommended that we'd better use `left_join()` to join data frames to one another unless there is a strong reason, because it preserves the original observations even though there isn’t a match in the right-side data frame. 
+
+See the R4ds [chapter](https://r4ds.had.co.nz/relational-data.html) on relational data as a great resource.
+
+<!--this chunk is not important as such: it just tell Rstudio
+to show code chunks, by default, in the HTML output-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
