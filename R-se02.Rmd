@@ -1,0 +1,269 @@
+---
+title: "R-se02-p1"
+author: "Jafar Khaksar"
+date: '2023-02-27'
+output: html_document
+---
+
+This tutorial is based on R4ds [chapter](https://r4ds.had.co.nz/transform.html) on Data transform. We cover `dplyr` functions like `filter(), mutate(),` and `group_by()`. We also introduce the pipe (` %>% `) operator and discuss briefly how to deal with missing data.
+
+Loading required packages.
+```{r}
+# install.packages(nycflights13)
+# install.packages(dplyr)
+library(nycflights13)
+library(dplyr)
+```
+
+Importing flights data set.
+```{r}
+data(flights)
+print(flights)
+```
+
+## restricting rows
+
+Store flights in the first of January in a another dataset (using dollar syntax)
+
+```{r}
+flights[flights$month==1 & flights$day==1,]
+```
+
+The same one using dyplr functions
+ 
+```{r}
+filter(flights, month==1, day==1) # & also works
+```
+
+Warm-up: Store flights in the midnight (from 0 to 6 AM)
+
+```{r}
+
+```
+## restricting columns
+
+
+```{r}
+flights[, c("year", "month", "day", "arr_delay", "dep_delay")]
+# we don't have to store the results.
+
+select(flights, year, month, day, arr_delay, dep_delay)
+```
+
+Show only departure related variables (columns)
+
+```{r}
+select(flights, contains("dep", ignore.case = TRUE))
+
+select(flights, starts_with("dep", ignore.case = TRUE))
+
+```
+
+`contain()` is called a helper function. Check out its help.
+
+## changing variables' names
+
+Change the name of first three variable to Fengligh
+
+```{r}
+rename(flights, sal=year, mah=month, rouz=day)
+```
+
+## generating new variables
+
+Calculate each flight's speed and add it to data as a new variable.
+
+```{r}
+mutate(flights, speed = distance/air_time * 60)
+```
+
+## missing values
+
+```{r}
+miss <- NA
+miss
+```
+
+some operations and NA
+
+```{r}
+miss+5
+miss * 10
+miss == F
+```
+
+### identifying NAs in a vector
+
+```{r}
+is.na(miss)
+is.na(flights$tailnum)
+```
+```{r}
+options(max.print = 100)
+```
+
+How many NAs?
+```{r}
+sum(is.na(flights$tailnum))
+```
+
+
+Which rows? `which()` function tell us this
+
+```{r}
+which(c(T,F,F,T))
+which(is.na(flights$tailnum))
+```
+
+keep flights with the planes tail number
+
+
+```{r}
+temp <- filter(flights, !is.na(flights$tailnum)) 
+temp
+
+any(c(F,F,F,T))
+
+any(is.na(temp$tailnum))
+
+rm(temp)
+```
+
+
+Also note that
+
+```{r}
+FALSE & NA
+TRUE | NA
+NA ^ 0
+```
+
+### Self-study: Identifying NAs in a data frame
+
+```{r}
+temp <- data.frame(name=c("peyman", "parisa", "parsa"),
+                   age=c(28, NA, 24),
+                   gpa=c(3.2, 3.8, 2.7),
+                   height=c(NA, 168, NA))
+
+is.na(temp)
+
+is.na(flights)
+```
+
+```{r}
+which(is.na(flights))
+
+which(is.na(flights), arr.ind = T)
+
+which(is.na(flights), arr.ind = T)[ , "col"]
+```
+
+```{r}
+unique(c(5, 5, 5, 3, 2, 7, 7, 7, 7, 7))
+
+unique(which(is.na(flights), arr.ind = T)[ , "col"])
+
+names(flights)
+
+names(flights)[unique(which(is.na(flights), arr.ind = T)[ , "col"])]
+
+```
+
+
+```{r}
+flights_NA_col <- unique(which(is.na(flights), arr.ind = T)[ , "col"])
+
+select(flights, - flights_NA_col)
+```
+
+## grouping
+
+calculate the average of departure delay
+
+```{r}
+mean(c(1,2,NA))
+summarise(flights, delay_avg = mean(dep_delay, na.rm = TRUE))
+```
+
+calculate the average of departure delay together with its minimum and maximum
+
+```{r}
+summarise(flights, delay_mean = mean(dep_delay, na.rm = TRUE), 
+          delay_max=max(dep_delay, na.rm = TRUE),
+          delay_min=min(dep_delay, na.rm = TRUE))
+```
+But we are more interested in sub-sample summaries. For example mean of delays for each destination. To this end, first, we should specify our group of interest, e.g., city of destination. Then, we should determine what kinds of summaries we want.
+
+```{r}
+by_dest <- group_by(flights, dest)
+
+temp <- summarise(by_dest, 
+          arr_delay_mean = mean(arr_delay, na.rm = TRUE),
+          arr_delay_max= max(arr_delay, na.rm = TRUE),
+          flight_number = n()
+          )
+
+temp
+```
+Why warning? because of a rare destination. Let's remove it!
+ 
+```{r}
+filter(temp, arr_delay_max!=-Inf)
+```
+
+
+## The pipe operator
+
+We can do the above three steps in one step using the pipe ` %>% ` operator. It works like this: we order R one command after another and R tell us "Sure" (` %>% `) after each command. The hot key for this operator in RStudio is "Ctrl+Shift+M"
+
+We: pick up flights data set (first command)
+R: sure ( `%>%` )
+We: put all flights to each airport (city) together (second command)
+R: sure (` %>% `)
+We: Calculate some summary statistics (third command)
+R: sure (` %>% `)
+We: remove that bad airport! (fourth command). After the last command we should not use the `%>%` operator.
+
+```{r}
+dest_delay_pipe <-  flights %>%
+                    group_by(dest) %>% 
+                    summarise(arr_delay_mean = mean(arr_delay, na.rm = TRUE),
+                              arr_delay_max=max(arr_delay, na.rm = TRUE),
+                              flight_number = n()
+                              )  %>% 
+                    filter(arr_delay_max!=-Inf)
+
+dest_delay_pipe
+```
+
+Do it yourself : compare n() to sum(is.na(x)) and n_distinct(x).
+
+
+## multiple grouping
+
+```{r}
+dest_month_delay <- flights %>%
+                    group_by(dest, month) %>%
+                    summarise(arr_delay_mean = mean(arr_delay, na.rm = TRUE),
+                    arr_delay_max=max(arr_delay, na.rm = TRUE),
+                    flight_number = n()
+                             )  %>% 
+                    filter(arr_delay_max!=-Inf)
+
+print(dest_month_delay)
+```
+
+
+See R4ds [chapter](https://r4ds.had.co.nz/transform.html) on Data transform for further discussion.
+
+
+<!--this chunk is not important as such: it just tell Rstudio
+to show code chunks, by default, in the HTML output-->
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
